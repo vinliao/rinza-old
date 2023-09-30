@@ -1,5 +1,6 @@
 import _ from "lodash-es";
 
+// TODO: mention, embeds, and all the stuff
 export const warpcast =
 	(apiKey: string) => async (text: string, parent?: unknown) => {
 		const url = "https://api.warpcast.com/v2/casts";

@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { clog } from "./utils";
+import { sleep } from "bun";
+import _ from "lodash-es";
 
 // =====================================================================================
 // schemas
@@ -24,6 +27,12 @@ const CastByIdSchema = z.object({
 	signature: z.string(),
 	signatureScheme: z.string(),
 	signer: z.string(),
+});
+
+type CastId = z.infer<typeof CastIdSchema>;
+const CastIdSchema = z.object({
+	fid: z.number(),
+	hash: z.string(),
 });
 
 const InternalCastSchema = z.object({
@@ -131,7 +140,36 @@ const embedMentions = (c: any, fidUsernameMap: Map<number, string>) => {
 	for (let i = c.mentionsPositions.length - 1; i >= 0; i--) {
 		const position = c.mentionsPositions[i];
 		const username = fidUsernameMap.get(c.mentions[i]) || "unknown";
-		tmp = tmp.slice(0, position) + "@" + username + tmp.slice(position);
+		tmp = `${tmp.slice(0, position)}@${username}${tmp.slice(position)}`;
 	}
 	return { ...c, text: tmp };
+};
+
+// long-polling server
+// read: https://grammy.dev/guide/deployment-types
+const pollNotification = async (
+	fid: number,
+	handler = (cid: CastId) => clog("pollNotification/handler", cid),
+	timeout = 10000,
+	isDev = true,
+) => {
+	const pollerUrl = "https://fc-long-poller-production.up.railway.app";
+	const url = isDev
+		? `${pollerUrl}/test-ancestor`
+		: `${pollerUrl}/notifications?fid=${fid}`;
+
+	while (true) {
+		try {
+			const notification = await fetch(url).then((res) => res.json());
+			const parsed = CastIdSchema.parse(notification);
+			clog("startPolling/notification", notification);
+			if (!notification) continue;
+			if (_.get(notification, "message") === "timeout") continue;
+			handler(parsed);
+		} catch (e) {
+			console.log(e);
+		}
+
+		if (isDev) await sleep(timeout);
+	}
 };

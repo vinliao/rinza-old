@@ -169,5 +169,5 @@ dist
 .pnp.\*
 
 
-playground.tsbuildinfo
+playground.ts
 app.log
