@@ -1,7 +1,7 @@
 import { z } from "zod";
+import * as R from "remeda";
 import { clog } from "./utils";
 import { sleep } from "bun";
-import _ from "lodash-es";
 
 // =====================================================================================
 // schemas
@@ -105,6 +105,11 @@ const extractCastById = (c: z.infer<typeof CastByIdSchema>) => ({
 	embeds: c.data.castAddBody.embeds,
 });
 
+const sortByTimestamp = (cs: any[]) => {
+	cs.sort((a, b) => a.timestamp - b.timestamp);
+	return cs.reverse();
+};
+
 const transformTimestmap = (c: any) => {
 	const FARCASTER_EPOCH = 1609459200; // January 1, 2021 UTC
 	return {
@@ -145,6 +150,10 @@ const embedMentions = (c: any, fidUsernameMap: Map<number, string>) => {
 	return { ...c, text: tmp };
 };
 
+// =====================================================================================
+// polling
+// =====================================================================================
+
 // long-polling server
 // read: https://grammy.dev/guide/deployment-types
 const pollNotification = async (
@@ -164,7 +173,8 @@ const pollNotification = async (
 			const parsed = CastIdSchema.parse(notification);
 			clog("startPolling/notification", notification);
 			if (!notification) continue;
-			if (_.get(notification, "message") === "timeout") continue;
+			if (R.pathOr(notification, ["message"], undefined) === "timeout")
+				continue;
 			handler(parsed);
 		} catch (e) {
 			console.log(e);
@@ -173,3 +183,56 @@ const pollNotification = async (
 		if (isDev) await sleep(timeout);
 	}
 };
+
+const processNotification = async (notification: CastId, mode = "cast") => {
+	const hubHTTP = "http://nemes.farcaster.xyz:2281";
+	const hubFetcher = makeHubFetcher(hubHTTP);
+
+	let tmp = [await hubFetcher.fetchCast(notification.fid, notification.hash)];
+	if (mode === "thread") {
+		const ancestors = await hubFetcher.fetchAncestors(
+			notification.fid,
+			notification.hash,
+		);
+		tmp = [...ancestors, ...tmp];
+	}
+
+	const extracted = R.pipe(
+		tmp,
+		R.map(extractCastById),
+		R.uniqBy((c) => c.hash),
+		R.sortBy((c) => c.timestamp),
+		R.reverse(),
+	);
+
+	clog("processNotification/extracted", extracted);
+
+	const fids = R.pipe(
+		extracted,
+		R.map((c) => [c.fid, ...c.mentions]),
+		R.flatten(),
+		R.uniq(),
+	);
+	const usernames = await Promise.all(R.map(fids, hubFetcher.fetchUsername));
+	const fidUsernameMap = new Map(usernames.map((u) => [u.fid, u.username]));
+
+	clog("processNotification/fids", fids);
+	clog("processNotification/fidUsernameMap", fidUsernameMap);
+
+	return R.pipe(
+		extracted,
+		R.map((c) => addUsername(c, fidUsernameMap)),
+		R.map((c) => embedMentions(c, fidUsernameMap)),
+		R.map(deleteMentions),
+		R.map(transformTimestmap),
+		R.map(InternalCastSchema.parse),
+	);
+};
+
+const a = {
+	fid: 4640,
+	hash: "0x6720564e582e0d79bef8c847a2d2afb46573c1c2",
+};
+
+// TODO: still wrong
+pollNotification(1, processNotification);

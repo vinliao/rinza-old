@@ -3,6 +3,8 @@ import { appendFile } from "node:fs";
 
 export const clog = (where: string, data: unknown): void => {
 	const stringify = (data: unknown): string => {
+		if (data instanceof Map)
+			return JSON.stringify(Array.from(data.entries()), null, 2);
 		if (typeof data === "object") return JSON.stringify(data, null, 2);
 		return String(data);
 	};
