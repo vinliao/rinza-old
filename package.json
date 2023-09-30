@@ -9,13 +9,14 @@
   },
   "devDependencies": {
     "@biomejs/biome": "1.2.2",
+    "@types/lodash-es": "^4.17.9",
     "bun-types": "latest"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "remeda": "^1.27.0",
+    "lodash-es": "^4.17.21",
     "zod": "^3.22.2"
   }
 }

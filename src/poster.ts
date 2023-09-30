@@ -1,7 +1,7 @@
-import { z } from "zod";
+import _ from "lodash-es";
 
 export const warpcast =
-	(apiKey: string) => async (text: string, parent?: any) => {
+	(apiKey: string) => async (text: string, parent?: unknown) => {
 		const url = "https://api.warpcast.com/v2/casts";
 		const headers = {
 			accept: "application/json",
@@ -9,34 +9,21 @@ export const warpcast =
 			"Content-Type": "application/json",
 		};
 
-		const parentCastId = parent
-			? {
-					hash: z.string().parse(parent.hash),
-					fid: z.number().parse(parent.fid),
-			  }
-			: undefined;
-
-		const body = JSON.stringify({
-			text,
-			parent: parentCastId,
-		});
-
+		const parentHash = _.get(parent, "hash");
+		const body = JSON.stringify({ text, parent: { hash: parentHash } });
 		const response = await fetch(url, { method: "POST", headers, body });
 		return response.json();
 	};
 
 export const neynar =
 	(signerUUID: string, apiKey: string) =>
-	async (text: string, parent?: any) => {
+	async (text: string, parent?: unknown) => {
 		const url = "https://api.neynar.com/v2/farcaster/cast";
-		const headers = {
-			api_key: apiKey,
-			"Content-Type": "application/json",
-		};
-
+		const headers = { api_key: apiKey, "Content-Type": "application/json" };
 		const body = JSON.stringify({
 			signer_uuid: signerUUID,
 			text: text,
+			parent: _.get(parent, "hash"),
 		});
 
 		const response = await fetch(url, { method: "POST", headers, body });

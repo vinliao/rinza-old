@@ -1,18 +1,17 @@
-export const clog = (description: string, data: any): void => {
-	const appendFile = async (path: string, data: string) => {
-		const file = Bun.file(path);
-		const log = `${await file.text()}${data}\n`;
-		await Bun.write(path, log);
+import { z } from "zod";
+import { appendFile } from "node:fs";
+
+export const clog = (where: string, data: unknown): void => {
+	const stringify = (data: unknown): string => {
+		if (typeof data === "object") return JSON.stringify(data, null, 2);
+		return String(data);
 	};
 
-	const now = new Date();
-	const timestamp = now.toISOString();
-	const log = `${timestamp} - ${description} - ${
-		data instanceof Object ? JSON.stringify(data, null, 2) : data
-	}\n`;
-
-	console.log(log);
-	appendFile("./app.log", log);
+	const timestamp = new Date().toISOString();
+	const log = `${timestamp} - ${where} - ${stringify(data)}\n`;
+	appendFile("./app.log", log, (err) => {
+		console.log(err);
+	});
 };
 
 export const sleep = (ms: number): Promise<void> =>
