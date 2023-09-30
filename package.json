@@ -3,7 +3,12 @@
   "version": "0.0.1",
   "module": "src/index.ts",
   "type": "module",
+  "scripts": {
+    "fmt": "bunx biome format src --write",
+    "lint": "bunx biome lint src"
+  },
   "devDependencies": {
+    "@biomejs/biome": "1.2.2",
     "bun-types": "latest"
   },
   "peerDependencies": {
