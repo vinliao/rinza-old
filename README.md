@@ -8,20 +8,20 @@ import { makeBot, makeHubFetcher, neynar } from "rinza";
 const hubHTTP = "xxxxxx.hubs.neynar.com:2281";
 const botFID = 4640;
 
-const signerUUID = z.string().parse(process.env.NEYNAR_PICTURE_SIGNER_UUID);
-const apiKey = z.string().parse(process.env.NEYNAR_API_KEY);
+const signerUUID = process.env.NEYNAR_PICTURE_SIGNER_UUID;
+const apiKey = process.env.NEYNAR_API_KEY;
 const bot = makeBot({
   hubFetcher: makeHubFetcher(hubHTTP),
   poster: neynar(signerUUID, apiKey),
 });
 
-// listen to all casts, save to db
+// listen to all casts then save to db
 bot.listen(-1, (ctx) => {
   console.log(ctx.casts) // prints all casts
   saveToDb(ctx.casts);
 });
 
-// listen to notification, bot reples "echo!" to each notifications
+// listen to notifications, bot reples "echo!" to each notifications
 bot.listen(botFID, (ctx) => {
   console.log(ctx.casts) // prints all casts
   ctx.reply("echo!");
