@@ -68,6 +68,21 @@ type ContextType = {
 };
 type PosterType = (text: string, cast: InternalCastType) => Promise<void>;
 
+/**
+ * Fetch options for bot
+ *
+ * @property {ReturnType<typeof makeHubFetcher>} hubFetcher Hub HTTP API wrapper
+ * @property {boolean} [returnsThread] (optional) whether ctx.casts should be a cast or a thead of casts
+ * @property {PosterType} [poster] (optional) poster function, for replying
+ * @property {string} [hubRPC] (optional) a Hub RPC endpoint
+ */
+type FetchOptionType = {
+	hubFetcher: ReturnType<typeof makeHubFetcher>;
+	returnsThread?: boolean;
+	poster?: PosterType; // posting stuff is optional
+	hubRPC?: string; // getting stuff from RPC is optional
+};
+
 // =====================================================================================
 // posters
 // =====================================================================================
@@ -108,7 +123,15 @@ export const hubble = (hubHTTP: string, signer: string) => {}; // TODO
 // =====================================================================================
 
 // wrapper around Hubble's HTTP API:
-// https://www.thehubble.xyz/docs/httpapi/httpapi.html
+
+/**
+ * A wrapper around Hubble's HTTP API.
+ *
+ * Read more: https://www.thehubble.xyz/docs/httpapi/httpapi.html
+ *
+ * @param hubHTTP HTTP endpoint of Hubble
+ * @returns functions that fetches and parses data
+ */
 export const makeHubFetcher = (hubHTTP: string) => {
 	type PageOptionType = {
 		pageSize?: number;
@@ -262,6 +285,7 @@ export const makeHubFetcher = (hubHTTP: string) => {
 // pipes
 // =====================================================================================
 
+// TODO: where's parent_url
 const extractCastById = (c: z.infer<typeof CastByIdSchema>) => ({
 	hash: c.hash,
 	parentHash: c.data.castAddBody.parentCastId?.hash,
@@ -334,7 +358,7 @@ const embedMentions = (c: any, fidUsernameMap: Map<number, string>) => {
  */
 const listenCast = async (
 	fid: number,
-	poster: PosterType,
+	fetchOption: FetchOptionType,
 	handler = (ctx: ContextType) => clog("listenCast/handler", ctx),
 ) => {
 	const pollerUrl = "https://fc-long-poller-production.up.railway.app";
@@ -352,7 +376,7 @@ const listenCast = async (
 			clog("startPolling/notification", notification);
 			if (!notification) continue;
 			if (notification?.message === "timeout") continue;
-			handler(await processCast(parsed, poster));
+			handler(await processCast(parsed, fetchOption));
 		} catch (e) {
 			console.log(e);
 		}
@@ -361,14 +385,13 @@ const listenCast = async (
 
 const processCast = async (
 	notification: CastId,
-	poster: PosterType,
-	mode = "cast",
+	fetchOption: FetchOptionType,
 ) => {
-	const hubHTTP = "http://nemes.farcaster.xyz:2281";
-	const hubFetcher = makeHubFetcher(hubHTTP);
+	const hubFetcher = fetchOption.hubFetcher;
+	const poster = fetchOption.poster;
 
 	let tmp = [await hubFetcher.castById(notification.fid, notification.hash)];
-	if (mode === "thread") {
+	if (fetchOption.returnsThread) {
 		const ancestors = await hubFetcher.ancestorsById(
 			notification.fid,
 			notification.hash,
@@ -409,13 +432,20 @@ const processCast = async (
 		),
 	);
 
-	return {
-		casts,
-		reply: async (text: string) => await poster(text, casts[0]),
-	};
+	const reply = poster
+		? async (text: string) => await poster(text, casts[0])
+		: async (text: string) => {}; // handle this!
+
+	return { casts, reply };
 };
 
-export const makeBot = (poster: PosterType) => {
+/**
+ * Creates a bot with specified fetch options.
+ *
+ * @param fetchOption - The options for fetching data.
+ * @returns nothing
+ */
+export const makeBot = (fetchOption: FetchOptionType) => {
 	const handlers = new Map<number, (ctx: ContextType) => void>();
 	const listen = (fid: number, handler: (ctx: ContextType) => void) => {
 		clog("makeBot/listen", `fid: ${fid}; handler: ${handler}`);
@@ -424,7 +454,7 @@ export const makeBot = (poster: PosterType) => {
 
 	const start = async () => {
 		handlers.forEach((handler, fid) => {
-			listenCast(fid, poster, handler);
+			listenCast(fid, fetchOption, handler);
 		});
 	};
 
@@ -433,20 +463,3 @@ export const makeBot = (poster: PosterType) => {
 		start,
 	};
 };
-
-// const signerUUID = z.string().parse(process.env.NEYNAR_PICTURE_SIGNER_UUID);
-// const apiKey = z.string().parse(process.env.NEYNAR_API_KEY);
-// const neynarPoster = neynar(signerUUID, apiKey);
-// const bot = makeBot(neynarPoster);
-
-// bot.listen(4640, async (ctx) => {
-// 	clog("bot.listen/4640", ctx);
-// 	if (ctx.casts[0].fid === 4286) ctx.reply("bot.listen/echo4640.4286");
-// 	ctx.reply("echo!");
-// });
-
-// bot.listen(-1, async (ctx) => {
-// 	clog("bot.listen/all", ctx);
-// });
-
-// bot.start();
