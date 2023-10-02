@@ -165,7 +165,7 @@ const listenCast = async (
 	const url =
 		fid === -1
 			? `${pollerUrl}/all-cast`
-			: `${pollerUrl}/notifications?fid=${fid}`
+			: `${pollerUrl}/notifications?fid=${fid}`;
 
 	clog("listenCast/url", url);
 
@@ -218,7 +218,7 @@ const processCast = async (notification: CastId, mode = "cast") => {
 	clog("processCast/fids", fids);
 	clog("processCast/fidUsernameMap", fidUsernameMap);
 
-	return R.pipe(
+	const casts = R.pipe(
 		extracted,
 		R.map((c) => addUsername(c, fidUsernameMap)),
 		R.map((c) => embedMentions(c, fidUsernameMap)),
@@ -226,6 +226,11 @@ const processCast = async (notification: CastId, mode = "cast") => {
 		R.map(transformTimestmap),
 		R.map(InternalCastSchema.parse),
 	);
+
+	return {
+		casts,
+		reply: async (text: string) => await poster(text, casts[0]),
+	};
 };
 
 // TODO: connect poster here with .reply()
@@ -257,8 +262,11 @@ const bot = makeBot(poster);
 
 bot.listen(4640, async (ctx) => {
 	clog("bot.listen/4640", ctx);
+	ctx.reply("bot.listen/echo4640");
 });
-bot.listen(-1, async (ctx) => {
-	clog("bot.listen/all", ctx);
-});
+
+// bot.listen(-1, async (ctx) => {
+// 	clog("bot.listen/all", ctx);
+// });
+
 bot.start();
