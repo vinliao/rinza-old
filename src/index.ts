@@ -159,13 +159,14 @@ const embedMentions = (c: any, fidUsernameMap: Map<number, string>) => {
 const pollNotification = async (
 	fid: number,
 	handler = (cid: CastId) => clog("pollNotification/handler", cid),
-	timeout = 10000,
-	isDev = true,
+	isDev = false,
 ) => {
 	const pollerUrl = "https://fc-long-poller-production.up.railway.app";
 	const url = isDev
-		? `${pollerUrl}/test-ancestor`
+		? `${pollerUrl}/all-cast`
 		: `${pollerUrl}/notifications?fid=${fid}`;
+
+	clog("pollNotification/url", url);
 
 	while (true) {
 		try {
@@ -179,8 +180,6 @@ const pollNotification = async (
 		} catch (e) {
 			console.log(e);
 		}
-
-		if (isDev) await sleep(timeout);
 	}
 };
 
@@ -229,10 +228,5 @@ const processNotification = async (notification: CastId, mode = "cast") => {
 	);
 };
 
-const a = {
-	fid: 4640,
-	hash: "0x6720564e582e0d79bef8c847a2d2afb46573c1c2",
-};
-
-// TODO: still wrong
-pollNotification(1, processNotification);
+// // TODO: still wrong
+// pollNotification(4640, processNotification, true);

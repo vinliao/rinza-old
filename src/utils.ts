@@ -1,4 +1,3 @@
-import { z } from "zod";
 import { appendFile } from "node:fs";
 
 export const clog = (where: string, data: unknown): void => {

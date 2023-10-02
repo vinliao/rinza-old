@@ -10,8 +10,7 @@ export const warpcast =
 			"Content-Type": "application/json",
 		};
 
-		const parentHash = R.pathOr(parent, ["hash"], undefined);
-		const body = JSON.stringify({ text, parent: { hash: parentHash } });
+		const body = JSON.stringify({ text, parent: { hash: parent?.hash } });
 		const response = await fetch(url, { method: "POST", headers, body });
 		return response.json();
 	};
@@ -21,11 +20,10 @@ export const neynar =
 	async (text: string, parent?: unknown) => {
 		const url = "https://api.neynar.com/v2/farcaster/cast";
 		const headers = { api_key: apiKey, "Content-Type": "application/json" };
-		const parentHash = R.pathOr(parent, ["hash"], undefined);
 		const body = JSON.stringify({
 			signer_uuid: signerUUID,
 			text: text,
-			parent: parentHash,
+			parent: parent?.hash,
 		});
 
 		const response = await fetch(url, { method: "POST", headers, body });
