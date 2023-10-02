@@ -76,7 +76,7 @@ type PosterType = (text: string, cast: InternalCastType) => Promise<void>;
  * @property {PosterType} [poster] (optional) poster function, for replying
  * @property {string} [hubRPC] (optional) a Hub RPC endpoint
  */
-type FetchOptionType = {
+type MakeBotOptionType = {
 	hubFetcher: ReturnType<typeof makeHubFetcher>;
 	returnsThread?: boolean;
 	poster?: PosterType; // posting stuff is optional
@@ -358,7 +358,7 @@ const embedMentions = (c: any, fidUsernameMap: Map<number, string>) => {
  */
 const listenCast = async (
 	fid: number,
-	fetchOption: FetchOptionType,
+	makeBotOption: MakeBotOptionType,
 	handler = (ctx: ContextType) => clog("listenCast/handler", ctx),
 ) => {
 	const pollerUrl = "https://fc-long-poller-production.up.railway.app";
@@ -376,7 +376,7 @@ const listenCast = async (
 			clog("startPolling/notification", notification);
 			if (!notification) continue;
 			if (notification?.message === "timeout") continue;
-			handler(await processCast(parsed, fetchOption));
+			handler(await processCast(parsed, makeBotOption));
 		} catch (e) {
 			console.log(e);
 		}
@@ -385,13 +385,13 @@ const listenCast = async (
 
 const processCast = async (
 	notification: CastId,
-	fetchOption: FetchOptionType,
+	makeBotOption: MakeBotOptionType,
 ) => {
-	const hubFetcher = fetchOption.hubFetcher;
-	const poster = fetchOption.poster;
+	const hubFetcher = makeBotOption.hubFetcher;
+	const poster = makeBotOption.poster;
 
 	let tmp = [await hubFetcher.castById(notification.fid, notification.hash)];
-	if (fetchOption.returnsThread) {
+	if (makeBotOption.returnsThread) {
 		const ancestors = await hubFetcher.ancestorsById(
 			notification.fid,
 			notification.hash,
@@ -445,7 +445,7 @@ const processCast = async (
  * @param fetchOption - The options for fetching data.
  * @returns nothing
  */
-export const makeBot = (fetchOption: FetchOptionType) => {
+export const makeBot = (makeBotOption: MakeBotOptionType) => {
 	const handlers = new Map<number, (ctx: ContextType) => void>();
 	const listen = (fid: number, handler: (ctx: ContextType) => void) => {
 		clog("makeBot/listen", `fid: ${fid}; handler: ${handler}`);
@@ -454,7 +454,7 @@ export const makeBot = (fetchOption: FetchOptionType) => {
 
 	const start = async () => {
 		handlers.forEach((handler, fid) => {
-			listenCast(fid, fetchOption, handler);
+			listenCast(fid, makeBotOption, handler);
 		});
 	};
 
