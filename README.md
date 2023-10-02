@@ -3,29 +3,22 @@ Rinza: a Farcaster bot SDK.
 ## TLDR
 
 ```typescript
-import { makeBot, makeHubFetcher, neynar } from "rinza";
-
-const hubHTTP = "xxxxxx.hubs.neynar.com:2281";
-const botFID = 4640;
-
-const signerUUID = process.env.NEYNAR_PICTURE_SIGNER_UUID;
-const apiKey = process.env.NEYNAR_API_KEY;
 const bot = makeBot({
   hubFetcher: makeHubFetcher(hubHTTP),
-  poster: neynar(signerUUID, apiKey),
+  poster,
 });
 
 // listen to notifications, bot reples "echo!" to each notifications
 bot.listen(botFID, (ctx) => {
-  console.log(ctx.casts) // prints all casts
+  console.log(ctx.casts)
   ctx.reply("echo!");
 });
 
-// casts the current ETH block height every hour
-bot.cron('0 * * * *', (ctx) => {
+// casts the current ETH block height every ten seconds
+new Cron("*/10 * * * * *", () => {
   const ethBlockHeight = fetchBlockHeight('eth');
-  ctx.cast(`Current block height: ${ethBlockHeight}`);
-}
+  poster(`Current block height: ${ethBlockHeight}`);
+});
 
 bot.start();
 ```
