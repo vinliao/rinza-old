@@ -36,6 +36,7 @@ const CastIdSchema = z.object({
 	hash: z.string(),
 });
 
+type InternalCastType = z.infer<typeof InternalCastSchema>;
 const InternalCastSchema = z.object({
 	fid: z.number(),
 	hash: z.string(),
@@ -46,6 +47,12 @@ const InternalCastSchema = z.object({
 	embeds: z.array(z.object({ url: z.string() })),
 	username: z.string(),
 });
+
+type ContextType = {
+	casts: InternalCastType[];
+	reply: (text: string) => Promise<void>;
+};
+type PosterType = (text: string, cast: InternalCastType) => Promise<void>;
 
 // =====================================================================================
 // fetcher
@@ -157,9 +164,15 @@ const embedMentions = (c: any, fidUsernameMap: Map<number, string>) => {
 
 // long-polling server
 // read: https://grammy.dev/guide/deployment-types
+/**
+ * @param fid fid to listen to, fid -1 means listen to all casts
+ * @param poster poster function, for replying
+ * @param handler handler function, for handling incoming casts
+ */
 const listenCast = async (
 	fid: number,
-	handler = (ctx: any) => clog("listenCast/handler", ctx),
+	poster: PosterType,
+	handler = (ctx: ContextType) => clog("listenCast/handler", ctx),
 ) => {
 	const pollerUrl = "https://fc-long-poller-production.up.railway.app";
 	const url =
@@ -176,14 +189,18 @@ const listenCast = async (
 			clog("startPolling/notification", notification);
 			if (!notification) continue;
 			if (notification?.message === "timeout") continue;
-			handler(await processCast(parsed));
+			handler(await processCast(parsed, poster));
 		} catch (e) {
 			console.log(e);
 		}
 	}
 };
 
-const processCast = async (notification: CastId, mode = "cast") => {
+const processCast = async (
+	notification: CastId,
+	poster: PosterType,
+	mode = "cast",
+) => {
 	const hubHTTP = "http://nemes.farcaster.xyz:2281";
 	const hubFetcher = makeHubFetcher(hubHTTP);
 
@@ -233,19 +250,16 @@ const processCast = async (notification: CastId, mode = "cast") => {
 	};
 };
 
-// TODO: connect poster here with .reply()
 const makeBot = (poster: (text: string) => Promise<void>) => {
-	const handlers = new Map<number, (ctx: unknown) => void>();
-	const defaultHandler = (ctx: unknown) => clog("makeBot/ctx", ctx);
-
-	const listen = (fid: number, handler = defaultHandler) => {
+	const handlers = new Map<number, (ctx: ContextType) => void>();
+	const listen = (fid: number, handler: (ctx: ContextType) => void) => {
 		clog("makeBot/listen", `fid: ${fid}; handler: ${handler}`);
 		handlers.set(fid, handler);
 	};
 
 	const start = async () => {
 		handlers.forEach((handler, fid) => {
-			listenCast(fid, handler);
+			listenCast(fid, poster, handler);
 		});
 	};
 
@@ -257,16 +271,17 @@ const makeBot = (poster: (text: string) => Promise<void>) => {
 
 const signerUUID = z.string().parse(process.env.NEYNAR_PICTURE_SIGNER_UUID);
 const apiKey = z.string().parse(process.env.NEYNAR_API_KEY);
-const poster = neynar(signerUUID, apiKey);
-const bot = makeBot(poster);
+const neynarPoster = neynar(signerUUID, apiKey);
+const bot = makeBot(neynarPoster);
 
 bot.listen(4640, async (ctx) => {
 	clog("bot.listen/4640", ctx);
-	ctx.reply("bot.listen/echo4640");
+	if (ctx.casts[0].fid === 4286) ctx.reply("bot.listen/echo4640.4286");
+	ctx.reply("echo!");
 });
 
-// bot.listen(-1, async (ctx) => {
-// 	clog("bot.listen/all", ctx);
-// });
+bot.listen(-1, async (ctx) => {
+	clog("bot.listen/all", ctx);
+});
 
 bot.start();
