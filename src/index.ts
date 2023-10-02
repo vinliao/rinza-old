@@ -28,6 +28,21 @@ const CastByIdSchema = z.object({
 	signatureScheme: z.string(),
 	signer: z.string(),
 });
+type UserDataType = z.infer<typeof UserDataSchema>;
+const UserDataSchema = z.object({
+	data: z.object({
+		type: z.string(),
+		fid: z.number(),
+		timestamp: z.number(),
+		network: z.string(),
+		userDataBody: z.object({ type: z.string(), value: z.string() }),
+	}),
+	hash: z.string(),
+	hashScheme: z.string(),
+	signature: z.string(),
+	signatureScheme: z.string(),
+	signer: z.string(),
+});
 
 type CastId = z.infer<typeof CastIdSchema>;
 const CastIdSchema = z.object({
@@ -111,12 +126,14 @@ export const makeHubFetcher = (hubHTTP: string) => {
 		Object.keys(params).forEach((key) =>
 			url.searchParams.append(toSnakeCase(key), String(params[key])),
 		);
+		const data = await fetch(url).then((res) => res.json());
 		clog("fetchHub/url", url);
-		return await fetch(url).then((res) => res.json());
+		clog("fetchHub/data", data);
+		return data;
 	};
 
 	const castById = async (fid: number, hash: string) =>
-		fetchHub("castById", { fid, hash });
+		CastByIdSchema.parse(await fetchHub("castById", { fid, hash }));
 
 	const ancestorsById = async (
 		fid: number,
@@ -133,10 +150,20 @@ export const makeHubFetcher = (hubHTTP: string) => {
 		return ancestorsById(parentFid, parentHash, cArray);
 	};
 
-	const userDataByFid = (fid: number, userDataType: number) =>
-		fetchHub("userDataByFid", { fid, userDataType });
-	const usernameByFid = (fid: number) => userDataByFid(fid, 6);
+	const userDataByFid = async (fid: number, userDataType: number) =>
+		UserDataSchema.parse(
+			await fetchHub("userDataByFid", { fid, userDataType }),
+		);
 
+	const usernameByFid = async (fid: number) => {
+		const data = await userDataByFid(fid, 6);
+		return {
+			fid: data.data.fid,
+			username: data.data.userDataBody.value,
+		};
+	};
+
+	// TODO: test all these
 	return {
 		castById, // defined above to make fetchAncestors work
 		ancestorsById,
