@@ -15,12 +15,6 @@ const bot = makeBot({
   poster: neynar(signerUUID, apiKey),
 });
 
-// listen to all casts then save to db
-bot.listen(-1, (ctx) => {
-  console.log(ctx.casts) // prints all casts
-  saveToDb(ctx.casts);
-});
-
 // listen to notifications, bot reples "echo!" to each notifications
 bot.listen(botFID, (ctx) => {
   console.log(ctx.casts) // prints all casts
