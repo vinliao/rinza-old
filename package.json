@@ -1,15 +1,24 @@
 {
   "name": "rinza",
   "version": "0.0.1",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "module": "src/index.ts",
   "type": "module",
   "scripts": {
     "fmt": "bunx biome format src --write",
-    "lint": "bunx biome lint src"
+    "lint": "bunx biome lint src",
+    "build": "bunx rimraf ./dist && bun run build:node && bun run build:type",
+    "build:node": "bun build --target=node ./src/index.ts --outfile=./dist/index.js --format=esm",
+    "build:type": "tsc --emitDeclarationOnly --declaration --declarationDir ./dist --outDir ./dist ./src/index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@biomejs/biome": "1.2.2",
-    "bun-types": "latest"
+    "@changesets/cli": "^2.26.2",
+    "bun-types": "latest",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.2.2"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"

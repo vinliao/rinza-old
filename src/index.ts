@@ -1,8 +1,6 @@
 import { z } from "zod";
 import * as R from "remeda";
 import { clog } from "./utils";
-import { sleep } from "bun";
-import { neynar } from "./poster";
 
 // =====================================================================================
 // schemas
@@ -56,45 +54,180 @@ type ContextType = {
 type PosterType = (text: string, cast: InternalCastType) => Promise<void>;
 
 // =====================================================================================
+// posters
+// =====================================================================================
+
+export const warpcast =
+	(apiKey: string) => async (text: string, parent?: unknown) => {
+		const url = "https://api.warpcast.com/v2/casts";
+		const headers = {
+			accept: "application/json",
+			authorization: `Bearer ${apiKey}`,
+			"Content-Type": "application/json",
+		};
+
+		const body = JSON.stringify({ text, parent: { hash: parent?.hash } });
+		const response = await fetch(url, { method: "POST", headers, body });
+		return response.json();
+	};
+
+export const neynar =
+	(signerUUID: string, apiKey: string) =>
+	async (text: string, parent?: unknown) => {
+		const url = "https://api.neynar.com/v2/farcaster/cast";
+		const headers = { api_key: apiKey, "Content-Type": "application/json" };
+		const body = JSON.stringify({
+			signer_uuid: signerUUID,
+			text: text,
+			parent: parent?.hash,
+		});
+
+		const response = await fetch(url, { method: "POST", headers, body });
+		return await response.json();
+	};
+
+export const hubble = (hubHTTP: string, signer: string) => {}; // TODO
+
+// =====================================================================================
 // fetcher
 // =====================================================================================
 
-const makeHubFetcher = (hubHTTP: string) => {
-	const fetchCast = async (fid: number, hash: string) => {
-		const cleanHash = hash.startsWith("0x") ? hash.slice(2) : hash;
-		const url = `${hubHTTP}/v1/castById?hash=${cleanHash}&fid=${fid}`;
-		const data = await fetch(url).then((res) => res.json());
-		return CastByIdSchema.parse(data);
+// wrapper around Hubble's HTTP API:
+// https://www.thehubble.xyz/docs/httpapi/httpapi.html
+export const makeHubFetcher = (hubHTTP: string) => {
+	type PageOptionType = {
+		pageSize?: number;
+		pageToken?: string;
+		reverse?: boolean;
 	};
 
-	const fetchAncestors = async (
+	const fetchHub = async (
+		endpoint: string,
+		params: Record<string, string | number | boolean>,
+	) => {
+		const toSnakeCase = (str: string) =>
+			str.replace(/[A-Z]/g, (letter: string) => `_${letter.toLowerCase()}`);
+		const url = new URL(`${hubHTTP}/v1/${endpoint}`);
+		Object.keys(params).forEach((key) =>
+			url.searchParams.append(toSnakeCase(key), String(params[key])),
+		);
+		clog("fetchHub/url", url);
+		return await fetch(url).then((res) => res.json());
+	};
+
+	const castById = async (fid: number, hash: string) =>
+		fetchHub("castById", { fid, hash });
+
+	const ancestorsById = async (
 		fid: number,
 		hash: string,
 		cArray: CastByIdType[] = [],
 	): Promise<CastByIdType[]> => {
-		const cast = await fetchCast(fid, hash);
+		const cast = await castById(fid, hash);
 		cArray.push(cast);
 
 		if (!cast.data.castAddBody.parentCastId) return cArray;
 		const parentHash = cast.data.castAddBody.parentCastId.hash;
 		const parentFid = cast.data.castAddBody.parentCastId.fid;
 
-		return fetchAncestors(parentFid, parentHash, cArray);
+		return ancestorsById(parentFid, parentHash, cArray);
 	};
 
-	const fetchUsername = async (fid: number) => {
-		const url = `${hubHTTP}/v1/userDataByFid?fid=${fid}&user_data_type=6`;
-		const data = await fetch(url).then((res) => res.json());
-		return {
-			fid,
-			username: data.data.userDataBody.value,
-		};
-	};
+	const userDataByFid = (fid: number, userDataType: number) =>
+		fetchHub("userDataByFid", { fid, userDataType });
+	const usernameByFid = (fid: number) => userDataByFid(fid, 6);
 
 	return {
-		fetchCast,
-		fetchAncestors,
-		fetchUsername,
+		castById, // defined above to make fetchAncestors work
+		ancestorsById,
+		dbStats: () => fetchHub("info", { dbStats: 1 }),
+
+		castsByFid: (fid: number, option?: PageOptionType) =>
+			fetchHub("castsByFid", { fid, ...option }),
+
+		castsByParent: (fid: number, hash: string, pageOption?: PageOptionType) =>
+			fetchHub("castsByParent", { fid, hash, ...pageOption }),
+
+		castsByParentUrl: (url: string, pageOption?: PageOptionType) =>
+			fetchHub("castsByParent", { url, ...pageOption }),
+
+		castsByMention: (fid: number, pageOption?: PageOptionType) =>
+			fetchHub("castsByMention", { fid, ...pageOption }),
+
+		reactionById: (
+			fid: number,
+			targetFid: number,
+			targetHash: string,
+			reactionType: string | number,
+		) =>
+			fetchHub("reactionById", {
+				fid,
+				targetFid,
+				targetHash,
+				reactionType,
+			}),
+
+		reactionsByFid: (
+			fid: number,
+			reactionType: string | number,
+			pageOption?: PageOptionType,
+		) => fetchHub("reactionsByFid", { fid, reactionType, ...pageOption }),
+
+		reactionsByCast: (
+			targetFid: number,
+			targetHash: string,
+			reactionType: string | number,
+			pageOption?: PageOptionType,
+		) =>
+			fetchHub("reactionsByCast", {
+				targetFid,
+				targetHash,
+				reactionType,
+				...pageOption,
+			}),
+
+		linkById: (fid: number, targetFid: number, linkType: string) =>
+			fetchHub("linkById", { fid, targetFid, linkType }),
+
+		linksByFid: (fid: number, linkType: string, pageOption: PageOptionType) =>
+			fetchHub("linksByFid", { fid, linkType, ...pageOption }),
+
+		linksByTargetFid: (
+			targetFid: number,
+			linkType: string,
+			pageOption: PageOptionType,
+		) => fetchHub("linksByTargetFid", { targetFid, linkType, ...pageOption }),
+
+		userDataByFid,
+		usernameByFid,
+
+		storageLimitsByFid: (fid: number) =>
+			fetchHub("storageLimitsByFid", { fid }),
+
+		userNameProofByName: (name: string) =>
+			fetchHub("userNameProofByName", { name }),
+
+		userNameProofsByFid: (fid: number) =>
+			fetchHub("userNameProofsByFid", { fid }),
+
+		verificationsByFid: (
+			fid: number,
+			address: string,
+			pageOption: PageOptionType,
+		) => fetchHub("verificationsByFid", { fid, address, ...pageOption }),
+
+		onChainSignersByFid: (fid: number, signer: string) =>
+			fetchHub("onChainSignersByFid", { fid, signer }),
+
+		onChainEventsByFid: (fid: number, eventType: number) =>
+			fetchHub("onChainEventsByFid", { fid, eventType }),
+
+		onChainIdRegistryEventByAddress: (address: string) =>
+			fetchHub("onChainIdRegistryEventByAddress", { address }),
+
+		eventById: (eventId: number) => fetchHub("eventById", { eventId }),
+		// events: (fromEventId) => fetchHub("events", { fromEventId }),
+		// submitMessage: () => fetchHub("submitMessage", {})
 	};
 };
 
@@ -207,9 +340,9 @@ const processCast = async (
 	const hubHTTP = "http://nemes.farcaster.xyz:2281";
 	const hubFetcher = makeHubFetcher(hubHTTP);
 
-	let tmp = [await hubFetcher.fetchCast(notification.fid, notification.hash)];
+	let tmp = [await hubFetcher.castById(notification.fid, notification.hash)];
 	if (mode === "thread") {
-		const ancestors = await hubFetcher.fetchAncestors(
+		const ancestors = await hubFetcher.ancestorsById(
 			notification.fid,
 			notification.hash,
 		);
@@ -232,19 +365,21 @@ const processCast = async (
 		R.flatten(),
 		R.uniq(),
 	);
-	const usernames = await Promise.all(R.map(fids, hubFetcher.fetchUsername));
+	const usernames = await Promise.all(R.map(fids, hubFetcher.usernameByFid));
 	const fidUsernameMap = new Map(usernames.map((u) => [u.fid, u.username]));
 
 	clog("processCast/fids", fids);
 	clog("processCast/fidUsernameMap", fidUsernameMap);
 
-	const casts = R.pipe(
-		extracted,
-		R.map((c) => addUsername(c, fidUsernameMap)),
-		R.map((c) => embedMentions(c, fidUsernameMap)),
-		R.map(deleteMentions),
-		R.map(transformTimestmap),
-		R.map(InternalCastSchema.parse),
+	const casts = sortByTimestamp(
+		R.pipe(
+			extracted,
+			R.map((c) => addUsername(c, fidUsernameMap)),
+			R.map((c) => embedMentions(c, fidUsernameMap)),
+			R.map(deleteMentions),
+			R.map(transformTimestmap),
+			R.map(InternalCastSchema.parse),
+		),
 	);
 
 	return {
@@ -253,7 +388,7 @@ const processCast = async (
 	};
 };
 
-const makeBot = (poster: PosterType) => {
+export const makeBot = (poster: PosterType) => {
 	const handlers = new Map<number, (ctx: ContextType) => void>();
 	const listen = (fid: number, handler: (ctx: ContextType) => void) => {
 		clog("makeBot/listen", `fid: ${fid}; handler: ${handler}`);
@@ -272,19 +407,19 @@ const makeBot = (poster: PosterType) => {
 	};
 };
 
-const signerUUID = z.string().parse(process.env.NEYNAR_PICTURE_SIGNER_UUID);
-const apiKey = z.string().parse(process.env.NEYNAR_API_KEY);
-const neynarPoster = neynar(signerUUID, apiKey);
-const bot = makeBot(neynarPoster);
+// const signerUUID = z.string().parse(process.env.NEYNAR_PICTURE_SIGNER_UUID);
+// const apiKey = z.string().parse(process.env.NEYNAR_API_KEY);
+// const neynarPoster = neynar(signerUUID, apiKey);
+// const bot = makeBot(neynarPoster);
 
-bot.listen(4640, async (ctx) => {
-	clog("bot.listen/4640", ctx);
-	if (ctx.casts[0].fid === 4286) ctx.reply("bot.listen/echo4640.4286");
-	ctx.reply("echo!");
-});
+// bot.listen(4640, async (ctx) => {
+// 	clog("bot.listen/4640", ctx);
+// 	if (ctx.casts[0].fid === 4286) ctx.reply("bot.listen/echo4640.4286");
+// 	ctx.reply("echo!");
+// });
 
-bot.listen(-1, async (ctx) => {
-	clog("bot.listen/all", ctx);
-});
+// bot.listen(-1, async (ctx) => {
+// 	clog("bot.listen/all", ctx);
+// });
 
-bot.start();
+// bot.start();
