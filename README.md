@@ -5,7 +5,7 @@ Rinza: a Farcaster bot SDK.
 ```typescript
 import { makeBot, makeHubFetcher, neynar } from "rinza";
 
-const hubHTTP = "http://nemes.farcaster.xyz:2281";
+const hubHTTP = "xxxxxx.hubs.neynar.com:2281";
 const botFID = 4640;
 
 const signerUUID = z.string().parse(process.env.NEYNAR_PICTURE_SIGNER_UUID);
