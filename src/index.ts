@@ -8,6 +8,7 @@ import { neynar } from "./poster";
 // schemas
 // =====================================================================================
 
+type CastByIdType = z.infer<typeof CastByIdSchema>;
 const CastByIdSchema = z.object({
 	data: z.object({
 		type: z.string(),
@@ -69,8 +70,8 @@ const makeHubFetcher = (hubHTTP: string) => {
 	const fetchAncestors = async (
 		fid: number,
 		hash: string,
-		cArray: any[] = [],
-	): Promise<any[]> => {
+		cArray: CastByIdType[] = [],
+	): Promise<CastByIdType[]> => {
 		const cast = await fetchCast(fid, hash);
 		cArray.push(cast);
 
@@ -162,9 +163,11 @@ const embedMentions = (c: any, fidUsernameMap: Map<number, string>) => {
 // polling
 // =====================================================================================
 
-// long-polling server
-// read: https://grammy.dev/guide/deployment-types
 /**
+ * Listen to long-polling server
+ *
+ * Read more: https://grammy.dev/guide/deployment-types
+ *
  * @param fid fid to listen to, fid -1 means listen to all casts
  * @param poster poster function, for replying
  * @param handler handler function, for handling incoming casts
@@ -176,7 +179,7 @@ const listenCast = async (
 ) => {
 	const pollerUrl = "https://fc-long-poller-production.up.railway.app";
 	const url =
-		fid === -1
+		fid === -1 // fid -1 means listen to all casts
 			? `${pollerUrl}/all-cast`
 			: `${pollerUrl}/notifications?fid=${fid}`;
 
@@ -250,7 +253,7 @@ const processCast = async (
 	};
 };
 
-const makeBot = (poster: (text: string) => Promise<void>) => {
+const makeBot = (poster: PosterType) => {
 	const handlers = new Map<number, (ctx: ContextType) => void>();
 	const listen = (fid: number, handler: (ctx: ContextType) => void) => {
 		clog("makeBot/listen", `fid: ${fid}; handler: ${handler}`);
