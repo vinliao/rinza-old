@@ -2,6 +2,7 @@ import { z } from "zod";
 import * as R from "remeda";
 import { clog } from "./utils";
 import { sleep } from "bun";
+import { neynar } from "./poster";
 
 // =====================================================================================
 // schemas
@@ -156,17 +157,17 @@ const embedMentions = (c: any, fidUsernameMap: Map<number, string>) => {
 
 // long-polling server
 // read: https://grammy.dev/guide/deployment-types
-const pollNotification = async (
+const listenCast = async (
 	fid: number,
-	handler = (cid: CastId) => clog("pollNotification/handler", cid),
-	isDev = false,
+	handler = (ctx: any) => clog("listenCast/handler", ctx),
 ) => {
 	const pollerUrl = "https://fc-long-poller-production.up.railway.app";
-	const url = isDev
-		? `${pollerUrl}/all-cast`
-		: `${pollerUrl}/notifications?fid=${fid}`;
+	const url =
+		fid === -1
+			? `${pollerUrl}/all-cast`
+			: `${pollerUrl}/notifications?fid=${fid}`
 
-	clog("pollNotification/url", url);
+	clog("listenCast/url", url);
 
 	while (true) {
 		try {
@@ -174,16 +175,15 @@ const pollNotification = async (
 			const parsed = CastIdSchema.parse(notification);
 			clog("startPolling/notification", notification);
 			if (!notification) continue;
-			if (R.pathOr(notification, ["message"], undefined) === "timeout")
-				continue;
-			handler(parsed);
+			if (notification?.message === "timeout") continue;
+			handler(await processCast(parsed));
 		} catch (e) {
 			console.log(e);
 		}
 	}
 };
 
-const processNotification = async (notification: CastId, mode = "cast") => {
+const processCast = async (notification: CastId, mode = "cast") => {
 	const hubHTTP = "http://nemes.farcaster.xyz:2281";
 	const hubFetcher = makeHubFetcher(hubHTTP);
 
@@ -204,7 +204,7 @@ const processNotification = async (notification: CastId, mode = "cast") => {
 		R.reverse(),
 	);
 
-	clog("processNotification/extracted", extracted);
+	clog("processCast/extracted", extracted);
 
 	const fids = R.pipe(
 		extracted,
@@ -215,8 +215,8 @@ const processNotification = async (notification: CastId, mode = "cast") => {
 	const usernames = await Promise.all(R.map(fids, hubFetcher.fetchUsername));
 	const fidUsernameMap = new Map(usernames.map((u) => [u.fid, u.username]));
 
-	clog("processNotification/fids", fids);
-	clog("processNotification/fidUsernameMap", fidUsernameMap);
+	clog("processCast/fids", fids);
+	clog("processCast/fidUsernameMap", fidUsernameMap);
 
 	return R.pipe(
 		extracted,
@@ -228,5 +228,37 @@ const processNotification = async (notification: CastId, mode = "cast") => {
 	);
 };
 
-// // TODO: still wrong
-// pollNotification(4640, processNotification, true);
+// TODO: connect poster here with .reply()
+const makeBot = (poster: (text: string) => Promise<void>) => {
+	const handlers = new Map<number, (ctx: unknown) => void>();
+	const defaultHandler = (ctx: unknown) => clog("makeBot/ctx", ctx);
+
+	const listen = (fid: number, handler = defaultHandler) => {
+		clog("makeBot/listen", `fid: ${fid}; handler: ${handler}`);
+		handlers.set(fid, handler);
+	};
+
+	const start = async () => {
+		handlers.forEach((handler, fid) => {
+			listenCast(fid, handler);
+		});
+	};
+
+	return {
+		listen,
+		start,
+	};
+};
+
+const signerUUID = z.string().parse(process.env.NEYNAR_PICTURE_SIGNER_UUID);
+const apiKey = z.string().parse(process.env.NEYNAR_API_KEY);
+const poster = neynar(signerUUID, apiKey);
+const bot = makeBot(poster);
+
+bot.listen(4640, async (ctx) => {
+	clog("bot.listen/4640", ctx);
+});
+bot.listen(-1, async (ctx) => {
+	clog("bot.listen/all", ctx);
+});
+bot.start();
