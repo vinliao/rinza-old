@@ -385,7 +385,7 @@ const listenCast = async (
  * @param botSettings settings for the bot
  * @returns context
  */
-const getCtx = async (castId: CastId, botSettings: BotSettingsType) => {
+export const getCtx = async (castId: CastId, botSettings: BotSettingsType) => {
 	const hubFetcher = botSettings.hubFetcher;
 	const poster = botSettings.poster;
 
