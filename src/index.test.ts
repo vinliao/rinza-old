@@ -28,11 +28,11 @@ describe("hubFetcher", () => {
 	test("usernameByFid()", async () => {
 		const data = await fetcher.usernameByFid(1);
 		expect(data.fid).toBeNumber();
-		expect(data.username).toBeString();
+		expect(data.username).toBe("farcaster");
 	});
 });
 
-describe("poller", () => {
+describe("getCtx", () => {
 	const castId = {
 		fid: 4640,
 		hash: "0x5373f293112dc8ae7d205cfba619db3ca3152d0f",
