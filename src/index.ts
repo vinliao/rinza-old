@@ -68,19 +68,12 @@ type ContextType = {
 };
 type PosterType = (text: string, cast: InternalCastType) => Promise<void>;
 
-/**
- * Fetch options for bot
- *
- * @property {ReturnType<typeof makeHubFetcher>} hubFetcher Hub HTTP API wrapper
- * @property {boolean} [returnsThread] (optional) whether ctx.casts should be a cast or a thead of casts
- * @property {PosterType} [poster] (optional) poster function, for replying
- * @property {string} [hubRPC] (optional) a Hub RPC endpoint
- */
-type MakeBotOptionType = {
+type BotSettingsType = {
 	hubFetcher: ReturnType<typeof makeHubFetcher>;
 	returnsThread?: boolean;
 	poster?: PosterType; // posting stuff is optional
 	hubRPC?: string; // getting stuff from RPC is optional
+	pollTimeout?: number; // in seconds
 };
 
 // =====================================================================================
@@ -353,49 +346,52 @@ const embedMentions = (c: any, fidUsernameMap: Map<number, string>) => {
  * Read more: https://grammy.dev/guide/deployment-types
  *
  * @param fid fid to listen to, fid -1 means listen to all casts
- * @param poster poster function, for replying
- * @param handler handler function, for handling incoming casts
+ * @param timeout polling timeout, in seconds
  */
 const listenCast = async (
 	fid: number,
-	makeBotOption: MakeBotOptionType,
-	handler = (ctx: ContextType) => clog("listenCast/handler", ctx),
+	handler: (ctx: ContextType) => void,
+	botSettings: BotSettingsType,
 ) => {
 	const pollerUrl = "https://fc-long-poller-production.up.railway.app";
-	const url =
-		fid === -1 // fid -1 means listen to all casts
-			? `${pollerUrl}/all-cast`
-			: `${pollerUrl}/notifications?fid=${fid}`;
+	const url = new URL(`${pollerUrl}/listen`);
+	if (fid !== -1) url.searchParams.append("fid", String(fid));
+	const timeout = botSettings.pollTimeout || 60;
+	url.searchParams.append("timeout", String(Math.min(timeout, 60) * 1000));
 
 	clog("listenCast/url", url);
 
 	while (true) {
 		try {
-			const notification = await fetch(url).then((res) => res.json());
-			const parsed = CastIdSchema.parse(notification);
-			clog("startPolling/notification", notification);
-			if (!notification) continue;
-			if (notification?.message === "timeout") continue;
-			handler(await processCast(parsed, makeBotOption));
+			const castId = await fetch(url).then((res) => res.json());
+			const parsed = CastIdSchema.parse(castId);
+			clog("startPolling/castId", castId);
+			if (!castId) continue;
+			if (castId?.message === "timeout") continue;
+			const ctx = await getCtx(parsed, botSettings);
+			// ctx.reply() works because ctx contains the reply fn
+			handler(ctx);
 		} catch (e) {
 			console.log(e);
 		}
 	}
 };
 
-const processCast = async (
-	notification: CastId,
-	makeBotOption: MakeBotOptionType,
-) => {
-	const hubFetcher = makeBotOption.hubFetcher;
-	const poster = makeBotOption.poster;
+/**
+ * The return of this function is what user interacts with when
+ * they use bot.listen(ctx => { ... })
+ *
+ * @param castId hash and fid, will be turned to context
+ * @param botSettings settings for the bot
+ * @returns context
+ */
+const getCtx = async (castId: CastId, botSettings: BotSettingsType) => {
+	const hubFetcher = botSettings.hubFetcher;
+	const poster = botSettings.poster;
 
-	let tmp = [await hubFetcher.castById(notification.fid, notification.hash)];
-	if (makeBotOption.returnsThread) {
-		const ancestors = await hubFetcher.ancestorsById(
-			notification.fid,
-			notification.hash,
-		);
+	let tmp = [await hubFetcher.castById(castId.fid, castId.hash)];
+	if (botSettings.returnsThread) {
+		const ancestors = await hubFetcher.ancestorsById(castId.fid, castId.hash);
 		tmp = [...ancestors, ...tmp];
 	}
 
@@ -442,10 +438,14 @@ const processCast = async (
 /**
  * Creates a bot with specified fetch options.
  *
- * @param fetchOption - The options for fetching data.
- * @returns nothing
+ * @param botSettings.hubFetcher - Hub HTTP API wrapper
+ * @param botSettings.returnsThread - (optional) whether ctx.casts should be a cast or a thead of casts
+ * @param botSettings.poster - (optional) poster function, for replying
+ * @param botSettings.hubRPC - (optional) a Hub RPC endpoint
+ * @param botSettings.pollTimeout - (optional) in seconds
+ * @returns a bot with `listen()` and `start()` function
  */
-export const makeBot = (makeBotOption: MakeBotOptionType) => {
+export const makeBot = (botSettings: BotSettingsType) => {
 	const handlers = new Map<number, (ctx: ContextType) => void>();
 	const listen = (fid: number, handler: (ctx: ContextType) => void) => {
 		clog("makeBot/listen", `fid: ${fid}; handler: ${handler}`);
@@ -454,7 +454,7 @@ export const makeBot = (makeBotOption: MakeBotOptionType) => {
 
 	const start = async () => {
 		handlers.forEach((handler, fid) => {
-			listenCast(fid, makeBotOption, handler);
+			listenCast(fid, handler, botSettings);
 		});
 	};
 
