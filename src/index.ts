@@ -1,6 +1,6 @@
 import { z } from "zod";
 import * as R from "remeda";
-import { clog } from "./utils";
+import { clog, sleep } from "./utils";
 
 // =====================================================================================
 // schemas
@@ -64,24 +64,26 @@ const InternalCastSchema = z.object({
 
 type ContextType = {
 	casts: InternalCastType[];
-	reply: (text: string) => Promise<void>;
+	reply: (text: string) => Promise<unknown>;
 };
-type PosterType = (text: string, cast: InternalCastType) => Promise<void>;
+
+type CastFnType = (text: string, cast: InternalCastType) => Promise<unknown>;
 
 type BotSettingsType = {
 	hubFetcher: ReturnType<typeof makeHubFetcher>;
 	returnsThread?: boolean;
-	poster?: PosterType; // posting stuff is optional
+	castFn?: CastFnType; // casting is optional
 	hubRPC?: string; // getting stuff from RPC is optional
 	pollTimeout?: number; // in seconds
+	isDev?: boolean; // use test polling endpoint
 };
 
 // =====================================================================================
-// posters
+// clients
 // =====================================================================================
 
-export const warpcast =
-	(apiKey: string) => async (text: string, parent?: unknown) => {
+export const warpcast = (apiKey: string) => {
+	const cast = async (text: string, parent?: unknown) => {
 		const url = "https://api.warpcast.com/v2/casts";
 		const headers = {
 			accept: "application/json",
@@ -91,8 +93,28 @@ export const warpcast =
 
 		const body = JSON.stringify({ text, parent: { hash: parent?.hash } });
 		const response = await fetch(url, { method: "POST", headers, body });
-		return response.json();
+		const data = await response.json();
+		clog("warpcast/cast", data);
+		return data;
 	};
+
+	const remove = async (hash: string) => {
+		const url = "https://api.warpcast.com/v2/casts";
+		const headers = {
+			accept: "application/json",
+			authorization: `Bearer ${apiKey}`,
+			"Content-Type": "application/json",
+		};
+
+		const body = JSON.stringify({ castHash: hash });
+		const response = await fetch(url, { method: "DELETE", headers, body });
+		const data = await response.json();
+		clog("warpcast/remove", data);
+		return data;
+	};
+
+	return { cast, remove };
+};
 
 export const neynar = (signerUUID: string, apiKey: string) => {
 	const cast = async (text: string, parent?: unknown) => {
@@ -105,7 +127,9 @@ export const neynar = (signerUUID: string, apiKey: string) => {
 		});
 
 		const response = await fetch(url, { method: "POST", headers, body });
-		return await response.json();
+		const data = await response.json();
+		clog("neynar/cast", data);
+		return data;
 	};
 
 	const remove = async (hash: string) => {
@@ -117,7 +141,9 @@ export const neynar = (signerUUID: string, apiKey: string) => {
 		});
 
 		const response = await fetch(url, { method: "DELETE", headers, body });
-		return await response.json();
+		const data = await response.json();
+		clog("neynar/remove", data);
+		return data;
 	};
 
 	return { cast, remove };
@@ -364,14 +390,15 @@ const embedMentions = (c: any, fidUsernameMap: Map<number, string>) => {
  */
 const listenCast = async (
 	fid: number,
-	handler: (ctx: ContextType) => void,
+	handler: (ctx: ContextType) => Promise<unknown>,
 	botSettings: BotSettingsType,
 ) => {
 	const pollerUrl = "https://fc-long-poller-production.up.railway.app";
-	const url = new URL(`${pollerUrl}/listen`);
+	let url = new URL(`${pollerUrl}/listen`);
 	if (fid !== -1) url.searchParams.append("fid", String(fid));
 	const timeout = botSettings.pollTimeout || 60;
 	url.searchParams.append("timeout", String(Math.min(timeout, 60) * 1000));
+	url = botSettings.isDev ? new URL(`${pollerUrl}/test-ancestor`) : url;
 
 	clog("listenCast/url", url);
 
@@ -382,12 +409,12 @@ const listenCast = async (
 			clog("startPolling/castId", castId);
 			if (!castId) continue;
 			if (castId?.message === "timeout") continue;
-			const ctx = await getCtx(parsed, botSettings);
-			// ctx.reply() works because ctx contains the reply fn
-			handler(ctx);
+			handler(await getCtx(parsed, botSettings));
 		} catch (e) {
 			console.log(e);
 		}
+
+		if (botSettings.isDev) await sleep(timeout);
 	}
 };
 
@@ -401,7 +428,7 @@ const listenCast = async (
  */
 export const getCtx = async (castId: CastId, botSettings: BotSettingsType) => {
 	const hubFetcher = botSettings.hubFetcher;
-	const poster = botSettings.poster;
+	clog("getCtx/castFn", botSettings.castFn);
 
 	let tmp = [await hubFetcher.castById(castId.fid, castId.hash)];
 	if (botSettings.returnsThread) {
@@ -442,8 +469,8 @@ export const getCtx = async (castId: CastId, botSettings: BotSettingsType) => {
 		),
 	);
 
-	const reply = poster
-		? async (text: string) => await poster(text, casts[0])
+	const reply = botSettings.castFn
+		? async (text: string) => await botSettings.castFn(text, casts[0])
 		: async (text: string) => {}; // handle this!
 
 	return { casts, reply };
@@ -454,14 +481,17 @@ export const getCtx = async (castId: CastId, botSettings: BotSettingsType) => {
  *
  * @param botSettings.hubFetcher - Hub HTTP API wrapper
  * @param botSettings.returnsThread - (optional) whether ctx.casts should be a cast or a thead of casts
- * @param botSettings.poster - (optional) poster function, for replying
+ * @param botSettings.castFn - (optional) for replying
  * @param botSettings.hubRPC - (optional) a Hub RPC endpoint
  * @param botSettings.pollTimeout - (optional) in seconds
  * @returns a bot with `listen()` and `start()` function
  */
 export const makeBot = (botSettings: BotSettingsType) => {
-	const handlers = new Map<number, (ctx: ContextType) => void>();
-	const listen = (fid: number, handler: (ctx: ContextType) => void) => {
+	const handlers = new Map<number, (ctx: ContextType) => Promise<unknown>>();
+	const listen = (
+		fid: number,
+		handler: (ctx: ContextType) => Promise<unknown>,
+	) => {
 		clog("makeBot/listen", `fid: ${fid}; handler: ${handler}`);
 		handlers.set(fid, handler);
 	};
