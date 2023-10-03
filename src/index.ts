@@ -94,9 +94,8 @@ export const warpcast =
 		return response.json();
 	};
 
-export const neynar =
-	(signerUUID: string, apiKey: string) =>
-	async (text: string, parent?: unknown) => {
+export const neynar = (signerUUID: string, apiKey: string) => {
+	const cast = async (text: string, parent?: unknown) => {
 		const url = "https://api.neynar.com/v2/farcaster/cast";
 		const headers = { api_key: apiKey, "Content-Type": "application/json" };
 		const body = JSON.stringify({
@@ -108,6 +107,21 @@ export const neynar =
 		const response = await fetch(url, { method: "POST", headers, body });
 		return await response.json();
 	};
+
+	const remove = async (hash: string) => {
+		const url = "https://api.neynar.com/v2/farcaster/cast";
+		const headers = { api_key: apiKey, "Content-Type": "application/json" };
+		const body = JSON.stringify({
+			signer_uuid: signerUUID,
+			target_hash: hash,
+		});
+
+		const response = await fetch(url, { method: "DELETE", headers, body });
+		return await response.json();
+	};
+
+	return { cast, remove };
+};
 
 export const hubble = (hubHTTP: string, signer: string) => {}; // TODO
 
@@ -279,7 +293,7 @@ export const makeHubFetcher = (hubHTTP: string) => {
 // =====================================================================================
 
 // TODO: where's parent_url
-const extractCastById = (c: z.infer<typeof CastByIdSchema>) => ({
+export const extractCastById = (c: z.infer<typeof CastByIdSchema>) => ({
 	hash: c.hash,
 	parentHash: c.data.castAddBody.parentCastId?.hash,
 	parentFid: c.data.castAddBody.parentCastId?.fid,

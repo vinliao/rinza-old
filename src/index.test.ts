@@ -1,10 +1,11 @@
-import { describe, expect, test, mock } from "bun:test";
-import { getCtx, makeBot, makeHubFetcher, neynar } from "./index.ts";
+import { describe, expect, test } from "bun:test";
+import { extractCastById, getCtx, makeHubFetcher, neynar } from "./index.ts";
 import { z } from "zod";
+import * as R from "remeda";
 
 describe("hubFetcher", () => {
-	const fid = 347;
-	const hash = "0x01a768f20f3c59018c9119f649d5132638f5ee96";
+	const fid = 4640;
+	const hash = "0x5373f293112dc8ae7d205cfba619db3ca3152d0f";
 	const hubHTTP = "https://20eef7.hubs.neynar.com:2281";
 	const fetcher = makeHubFetcher(hubHTTP);
 
@@ -33,31 +34,44 @@ describe("hubFetcher", () => {
 
 describe("poller", () => {
 	const castId = {
-		fid: 347,
-		hash: "0x01a768f20f3c59018c9119f649d5132638f5ee96",
+		fid: 4640,
+		hash: "0x5373f293112dc8ae7d205cfba619db3ca3152d0f",
 	};
 	const hubHTTP = "https://20eef7.hubs.neynar.com:2281";
 	const fetcher = makeHubFetcher(hubHTTP);
 	const signerUUID = z.string().parse(process.env.NEYNAR_PICTURE_SIGNER_UUID);
 	const apiKey = z.string().parse(process.env.NEYNAR_API_KEY);
-	const poster = neynar(signerUUID, apiKey);
+	const client = neynar(signerUUID, apiKey);
 	const botSettings = {
 		hubFetcher: fetcher,
-		poster,
+		poster: client.cast,
 	};
 
 	test("poster()", async () => {
-		const data = await poster(`testing ${Math.random()}`);
+		const data = await client.cast(`testing ${Math.random()}`);
 		expect(data).toBeDefined();
+		client.remove(data.cast.hash);
 	});
 
-	test("getCtx()", async () => {
+	test("getCtx().reply()", async () => {
 		const ctx = await getCtx(castId, botSettings);
 		expect(ctx.casts[0].hash).toBe(castId.hash);
-		expect(ctx.reply).toBeFunction();
+		const text = `testing ${Math.random()}`;
+		const reply = await client.cast(text, ctx.casts[0]);
+		const replyHash = z.string().parse(reply.cast.hash);
+		const replyFid = z.number().parse(reply.cast.author.fid);
+
+		const fetchedReply = R.pipe(
+			await fetcher.castById(replyFid, replyHash),
+			extractCastById,
+		);
+
+		expect(fetchedReply.parentHash).toBe(ctx.casts[0].hash);
+		expect(fetchedReply.text).toBe(text);
+		client.remove(replyHash);
 	});
 
-	test("getCtx() returnsThread", async () => {
+	test("getCtx() returnsThread=true", async () => {
 		const ctx = await getCtx(castId, { ...botSettings, returnsThread: true });
 		expect(ctx.casts[0].hash).toBe(castId.hash);
 		for (let i = 0; i < ctx.casts.length - 1; i++) {
@@ -67,5 +81,3 @@ describe("poller", () => {
 		expect(ctx.reply).toBeFunction();
 	});
 });
-
-// TODO cleanup: remove all new cast created in the last minute or something
