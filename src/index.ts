@@ -390,7 +390,7 @@ const embedMentions = (c: any, fidUsernameMap: Map<number, string>) => {
  */
 const listenCast = async (
 	fid: number,
-	handler: (ctx: ContextType) => Promise<unknown>,
+	handler: (ctx: ContextType) => void,
 	botSettings: BotSettingsType,
 ) => {
 	const pollerUrl = "https://fc-long-poller-production.up.railway.app";
@@ -487,11 +487,8 @@ export const getCtx = async (castId: CastId, botSettings: BotSettingsType) => {
  * @returns a bot with `listen()` and `start()` function
  */
 export const makeBot = (botSettings: BotSettingsType) => {
-	const handlers = new Map<number, (ctx: ContextType) => Promise<unknown>>();
-	const listen = (
-		fid: number,
-		handler: (ctx: ContextType) => Promise<unknown>,
-	) => {
+	const handlers = new Map<number, (ctx: ContextType) => void>();
+	const listen = (fid: number, handler: (ctx: ContextType) => void) => {
 		clog("makeBot/listen", `fid: ${fid}; handler: ${handler}`);
 		handlers.set(fid, handler);
 	};
