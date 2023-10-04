@@ -3,9 +3,10 @@ Rinza: a Farcaster bot SDK.
 ## TLDR
 
 ```typescript
+const client = neynar(signerUUID, apiKey);
 const bot = makeBot({
   hubFetcher: makeHubFetcher(hubHTTP),
-  poster,
+  castFn: client.cast,
 });
 
 // listen to notifications, bot reples "echo!" to each notifications
