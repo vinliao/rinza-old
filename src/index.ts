@@ -44,7 +44,7 @@ const UserDataSchema = z.object({
 	signer: z.string(),
 });
 
-type CastId = z.infer<typeof CastIdSchema>;
+type CastIdType = z.infer<typeof CastIdSchema>;
 const CastIdSchema = z.object({
 	fid: z.number(),
 	hash: z.string(),
@@ -404,11 +404,12 @@ const listenCast = async (
 
 	while (true) {
 		try {
-			const castId = await fetch(url).then((res) => res.json());
-			const parsed = CastIdSchema.parse(castId);
-			clog("startPolling/castId", castId);
-			if (!castId) continue;
-			if (castId?.message === "timeout") continue;
+			const response = await fetch(url);
+			if (response.status !== 200) continue;
+			const data = await response.json();
+			if (data.message === "timeout") continue;
+			const parsed = CastIdSchema.parse(data);
+			clog("startPolling/parsed", parsed);
 			handler(await getCtx(parsed, botSettings));
 		} catch (e) {
 			console.log(e);
