@@ -70,7 +70,7 @@ type ContextType = {
 type CastFnType = (text: string, cast: InternalCastType) => Promise<unknown>;
 
 type BotSettingsType = {
-	hubFetcher: ReturnType<typeof makeHubFetcher>;
+	hubFetcher: ReturnType<typeof makeHubbleFetcher>;
 	returnsThread?: boolean;
 	castFn?: CastFnType; // casting is optional
 	hubRPC?: string; // getting stuff from RPC is optional
@@ -165,7 +165,7 @@ export const hubble = (hubHTTP: string, signer: string) => {}; // TODO
  * @param hubHTTP HTTP endpoint of Hubble
  * @returns functions that fetches and parses data
  */
-export const makeHubFetcher = (hubHTTP: string) => {
+export const makeHubbleFetcher = (hubHTTP: string) => {
 	type PageOptionType = {
 		pageSize?: number;
 		pageToken?: string;
@@ -427,7 +427,10 @@ const listenCast = async (
  * @param botSettings settings for the bot
  * @returns context
  */
-export const getCtx = async (castId: CastId, botSettings: BotSettingsType) => {
+export const getCtx = async (
+	castId: CastIdType,
+	botSettings: BotSettingsType,
+) => {
 	const hubFetcher = botSettings.hubFetcher;
 	clog("getCtx/castFn", botSettings.castFn);
 
